@@ -121,7 +121,7 @@ class PersonalGifCollection(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
 
     # This model should also have a many to many relationship with the Gif model (one gif might be in many personal collections, one personal collection could have many gifs in it).
-    gif = db.relationship('Gif',secondary=user_collection,backref=db.backref('personalGifColl',lazy='dynamic'),lazy='dynamic')
+    gifs = db.relationship('Gif',secondary=user_collection,backref=db.backref('personalGifColl',lazy='dynamic'),lazy='dynamic')
 
 
 class SearchTerm(db.Model):
@@ -223,26 +223,35 @@ def get_or_create_search_term(term):
         search_term = SearchTerm(term=term)
     # This function should invoke the get_gifs_from_giphy function to get a list of gif data from Giphy.
         gif_list = get_gifs_from_giphy(term)
-        print(gif_list)
     # It should iterate over that list acquired from Giphy and invoke get_or_create_gif for each, and then append the return value from get_or_create_gif to the search term's associated gifs (remember, many-to-many relationship between search terms and gifs, allowing you to do this!).
         for gif in gif_list['data']:
-            get_or_create_gif(gif['title'], gif['url'])
-            print(gif['title'], gif['url'])
+            g = get_or_create_gif(gif['title'], gif['embed_url'])
+            print(gif['url'])
+            search_term.gifs.append(g)
     # If a new search term were created, it should finally be added and committed to the database.
     # And the SearchTerm instance that was got or created should be returned.
         db.session.add(search_term)
         db.session.commit()
+    return search_term
     # HINT: I recommend using print statements as you work through building this function and use it in invocations in view functions to ensure it works as you expect!
 
 def get_or_create_collection(name, current_user, gif_list=[]):
     """Always returns a PersonalGifCollection instance"""
 
     # TODO 364: This function should get or create a personal gif collection. Uniqueness of the gif collection should be determined by the name of the collection and the id of the logged in user.
-    collection = db_session.query(PersonalGifCollection).filter_by(name=name).first()
-    if collection and current_user:
+    collection = db.session.query(PersonalGifCollection).filter_by(name=name).first()
+    if collection:
         return collection
     else:
-        collection = PersonalGifCollection(name=name, user_id=current_user, gifs = gif_list)
+        print(type(current_user.id))
+        collection = PersonalGifCollection(name=name, user_id=current_user.id)
+        db.session.add(collection)
+        for g in gif_list:
+            print(g)
+            collection.gifs.append(g)
+        db.session.commit()
+        return collection
+
     # In other words, based on the input to this function, if there exists a collection with the input name, associated with the current user, then this function should return that PersonalGifCollection instance.
 
     # However, if no such collection exists, a new PersonalGifCollection instance should be created, and each Gif in the gif_list input should be appended to it (remember, there exists a many to many relationship between Gifs and PersonalGifCollections).
@@ -346,21 +355,23 @@ def create_collection():
     # TODO 364: If the form validates on submit, get the list of the gif ids that were selected from the form. Use the get_gif_by_id function to create a list of Gif objects.  Then, use the information available to you at this point in the function (e.g. the list of gif objects, the current_user) to invoke the get_or_create_collection function, and redirect to the page that shows a list of all your collections.
     # If the form is not validated, this view function should simply render the create_collection.html template and send the form to the template.
     all_gifs = []
-    if form.validate_on_submit():
-        print(form.gif_picks.data)
+    if request.method == 'POST':
         for g in form.gif_picks.data:
-            gif = get_gif_by_id(g.id)
+            print(g)
+            gif = get_gif_by_id(g)
             all_gifs.append(gif)
 
         get_or_create_collection(form.name.data, current_user, all_gifs)
+        return redirect(url_for('collections'))
+    return render_template('create_collection.html', form=form)
 
 
 @app.route('/collections',methods=["GET","POST"])
 @login_required
 def collections():
-    pass # Replace with code
     # TODO 364: This view function should render the collections.html template so that only the current user's personal gif collection links will render in that template. Make sure to examine the template so that you send it the correct data!
-
+    coll = PersonalGifCollection.query.all()
+    return render_template('collections.html', collections=coll)
 
 # Provided
 @app.route('/collection/<id_num>')
